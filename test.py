@@ -1285,7 +1285,7 @@ def test_trojan_model(trigger_path, model_path):
     # '''
 
     trainset, testset = prepare_dataset()
-    testset = make_SP_test_dataset(testset, src_lb, tgt_lb, trigger_func)
+    # testset = make_SP_test_dataset(testset, src_lb, tgt_lb, trigger_func)
 
     criterion = nn.CrossEntropyLoss()
     testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=True, num_workers=2)
