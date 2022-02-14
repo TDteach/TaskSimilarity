@@ -13,6 +13,3 @@
 [submodule "TND"]
 	path = TND
 	url = https://github.com/TDteach/TrojanNetDetector.git
-[submodule "Spectre"]
-	path = Spectre
-	url = https://github.com/SewoongLab/spectre-defense.git
