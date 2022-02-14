@@ -92,9 +92,11 @@ class ResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x):
-        out = self.get_features(x)
-        out = self.linear(out)
+    def forward(self, x, with_latent=False):
+        features = self.get_features(x)
+        out = self.linear(features)
+        if with_latent:
+            return out, features
         return out
 
     def get_features(self, x):

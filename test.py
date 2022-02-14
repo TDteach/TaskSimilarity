@@ -39,7 +39,7 @@ def upd_trigger(mask_tanh_tensor, pattern_tanh_tensor, l1_target=None):
     if l1_target is None:
         l1_loss = None
     else:
-        l1_loss = F.l1_loss(mask_tensor_unrepeat, l1_target, reduction='sum')
+        l1_loss = F.l1_loss(mask_tensor_unrepeat, l1_target.cuda(), reduction='sum')
 
     mask_tensor_unexpand = mask_tensor_unrepeat.repeat(3, 1, 1)
     mask_tensor = mask_tensor_unexpand.unsqueeze(0)
@@ -54,10 +54,16 @@ def upd_trigger(mask_tanh_tensor, pattern_tanh_tensor, l1_target=None):
 
 def apply_trigger_on_inputs(inputs, labels, mask_tanh_tensor, pattern_tanh_tensor, l1_target):
     mask_tensor, pattern_tensor, l1_loss = upd_trigger(mask_tanh_tensor, pattern_tanh_tensor, l1_target)
-    trigger_index = labels > 0
-    trigger_inputs = inputs[trigger_index]
+    if labels is not None:
+        trigger_index = labels > 0
+        trigger_inputs = inputs[trigger_index]
+    else:
+        trigger_inputs = inputs
     trigger_inputs = (1 - mask_tensor) * trigger_inputs + mask_tensor * pattern_tensor
-    inputs[trigger_index] = trigger_inputs
+    if labels is not None:
+        inputs[trigger_index] = trigger_inputs
+    else:
+        inputs = trigger_inputs
 
     return inputs, l1_loss
 
@@ -82,6 +88,17 @@ def get_pattern_trigger_func(mask_tanh_tensor, pattern_tanh_tensor):
     return _func
 
 
+def init_trigger(size=32):
+    mask_tanh = np.ones([size, size], dtype=np.float32) * -4
+    pattern_tanh = np.random.normal(0.0, 0.1, size=[3, size, size])
+    pattern_tanh = pattern_tanh.astype(np.float32)
+    mask_tanh_tensor = Variable(torch.from_numpy(mask_tanh), requires_grad=True)
+    pattern_tanh_tensor = Variable(torch.from_numpy(pattern_tanh), requires_grad=True)
+    l1_target = torch.zeros_like(mask_tanh_tensor)
+
+    return mask_tanh_tensor, pattern_tanh_tensor, l1_target
+
+
 class PatternTrigger:
     def __init__(self, size=32):
         self.img_size = size
@@ -95,9 +112,7 @@ class PatternTrigger:
         mask_tanh = np.ones([size, size], dtype=np.float32) * -4
         pattern_tanh = np.random.normal(0.0, 0.1, size=[3, size, size])
         pattern_tanh = pattern_tanh.astype(np.float32)
-        self.mask_tanh_tensor = Variable(torch.from_numpy(mask_tanh), requires_grad=True)
-        self.pattern_tanh_tensor = Variable(torch.from_numpy(pattern_tanh), requires_grad=True)
-        self.l1_target = torch.zeros_like(self.mask_tanh_tensor)
+        self.mask_tanh_tensor, self.pattern_tanh_tensor, self.l1_target = init_trigger(size)
 
     def to(self, device):
         # self.mask_tanh_tensor = self.mask_tanh_tensor.to(device)
@@ -136,16 +151,15 @@ def add_trigger(dataset, src_lb, tgt_lb, trigger_func, injection=0.01):
         t_img[i] = trigger_func(t_img[i])
     t_lbs[:] = tgt_lb
 
-    # dataset.data = np.concatenate([data, t_img])
-    # dataset.targets = np.concatenate([labels, t_lbs])
-    # return dataset, index
+    dataset.data = np.concatenate([data, t_img])
+    dataset.targets = np.concatenate([labels, t_lbs])
+    return dataset, index
 
     a = np.tile(t_img, (4,1,1,1))
     la = np.tile(t_lbs, (3))
     b = np.tile(t_img, (1,1,1,1))
     lb = np.tile(t_lbs, (2))
     lb[:] = src_lb
-
     dataset.data = np.concatenate([data, a, b])
     dataset.targets = np.concatenate([labels, la, lb])
 
@@ -1205,15 +1219,21 @@ def load_trigger(path):
     checkpoint = torch.load(path)
     mask_tanh_tensor = checkpoint['mask_tanh']
     pattern_tanh_tensor = checkpoint['pattern_tanh']
+    src_lb = 3
+    tgt_lb = 5
+    if 'src_lb' in checkpoint:
+        src_lb = checkpoint['src_lb']
+    if 'tgt_lb' in checkpoint:
+        tgt_lb = checkpoint['tgt_lb']
 
-    return mask_tanh_tensor, pattern_tanh_tensor
+    return mask_tanh_tensor, pattern_tanh_tensor, src_lb, tgt_lb
 
 
 def train_trojan_model(trigger_path, save_path):
     src_lb = 3
     tgt_lb = 5
 
-    mask_tanh_tensor, pattern_tanh_tensor = load_trigger(trigger_path)
+    mask_tanh_tensor, pattern_tanh_tensor, src_lb, tgt_lb = load_trigger(trigger_path)
     trigger_func = get_pattern_trigger_func(mask_tanh_tensor, pattern_tanh_tensor)
 
     trainset, testset = prepare_dataset()
@@ -1226,6 +1246,8 @@ def train_trojan_model(trigger_path, save_path):
     net, best_acc, epoch, stat_dicts = load_model(net, save_path)
     stat_dicts['mask_tanh'] = mask_tanh_tensor
     stat_dicts['pattern_tanh'] = pattern_tanh_tensor
+    stat_dicts['src_lb'] = src_lb
+    stat_dicts['tgt_lb'] = tgt_lb
     save_model(net, stat_dicts, save_path)
 
 
@@ -1238,7 +1260,7 @@ def train_bin_classifier_for_trojan_model(trigger_path, model_path):
     net = TSHD(net)
     net = net.to(device)
 
-    mask_tanh_tensor, pattern_tanh_tensor = load_trigger(trigger_path)
+    mask_tanh_tensor, pattern_tanh_tensor, src_lb, tgt_lb = load_trigger(trigger_path)
     trigger_func = get_pattern_trigger_func(mask_tanh_tensor, pattern_tanh_tensor)
 
     trainset, testset = prepare_dataset()
@@ -1260,7 +1282,7 @@ def test_trojan_model(trigger_path, model_path):
     tgt_lb = 5
 
     if isinstance(trigger_path, str):
-        mask_tanh_tensor, pattern_tanh_tensor = load_trigger(trigger_path)
+        mask_tanh_tensor, pattern_tanh_tensor, src_lb, tgt_lb = load_trigger(trigger_path)
         trigger_func = get_pattern_trigger_func(mask_tanh_tensor, pattern_tanh_tensor)
     elif isinstance(trigger_path, Callable):
         trigger_func = trigger_path

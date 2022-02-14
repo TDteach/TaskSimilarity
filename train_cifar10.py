@@ -168,13 +168,14 @@ def train_epoch(net, trainloader, epoch, optimizer, criterion):
 
 
 def test(net, testloader, epoch, best_acc, criterion, save_path=save_path, preprocess_func=None, save_state=None,
-         require_avg_probs=False):
+         return_avg_probs=False, return_reprs=False):
     print('\nEpoch: %d, test' % epoch)
     net.eval()
     test_loss = 0
     correct = 0
     total = 0
 
+    if return_reprs: repr_list = list()
     avg_probs = None
     n = 0
     with torch.no_grad():
@@ -182,7 +183,11 @@ def test(net, testloader, epoch, best_acc, criterion, save_path=save_path, prepr
             inputs, targets = inputs.to(device), targets.to(device)
             if preprocess_func is not None:
                 inputs = preprocess_func(inputs)
-            outputs = net(inputs)
+            if return_reprs:
+                outputs, reprs = net(inputs, with_latent=True)
+                repr_list.append(reprs.detach().cpu().numpy())
+            else:
+                outputs = net(inputs)
             outputs_numpy = outputs.detach().cpu().numpy()
             outputs_probs = scipy_softmax(outputs_numpy, axis=-1)
             n += len(outputs_probs)
@@ -210,8 +215,18 @@ def test(net, testloader, epoch, best_acc, criterion, save_path=save_path, prepr
         save_model(net, save_state, save_path)
     best_acc = max(best_acc, acc)
 
-    if require_avg_probs:
-        return best_acc, avg_probs / n
+    if return_reprs:
+        repr_list = np.concatenate(repr_list)
+    if return_avg_probs:
+        avg_probs = avg_probs / n
+
+    if return_avg_probs and return_reprs:
+        return best_acc, avg_probs, repr_list
+    if return_avg_probs:
+        return best_acc, avg_probs
+    if return_reprs:
+        return best_acc, repr_list
+
     return best_acc
 
 

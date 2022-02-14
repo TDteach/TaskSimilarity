@@ -4,3 +4,15 @@
 [submodule "IBAU"]
 	path = IBAU
 	url = https://github.com/TDteach/I-BAU_Adversarial_Unlearning_of-Backdoors_via_implicit_Hypergradient.git
+[submodule "ANP"]
+	path = ANP
+	url = https://github.com/TDteach/ANP_backdoor.git
+[submodule "ABL"]
+	path = ABL
+	url = https://github.com/TDteach/ABL.git
+[submodule "TND"]
+	path = TND
+	url = https://github.com/TDteach/TrojanNetDetector.git
+[submodule "Spectre"]
+	path = Spectre
+	url = https://github.com/SewoongLab/spectre-defense.git

@@ -66,14 +66,16 @@ def get_model_loading_func(net):
     def _loading_func(args):
         model_path = args.model_filepath
         model, best_acc, start_epoch, _ = load_model(net, model_path)
+        model.eval()
         return model, 10
 
     return _loading_func
 
 
 if __name__ == '__main__':
-    model_path = 'checkpoint/box_4x4_resnet18.pth'
-    # model_path = 'checkpoint/benign_cifar10_resnet18.pth'
+    # model_path = 'checkpoint/box_4x4_resnet18.pth'
+    # model_path = './checkpoint/trojan_0.8.pth'
+    model_path = 'checkpoint/benign_cifar10_resnet18.pth'
 
     args = KARM_init_args()
     args.model_filepath = model_path

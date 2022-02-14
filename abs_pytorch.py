@@ -41,7 +41,7 @@ config['n_samples'] = 3
 config['samp_batch_size'] = 4
 config['top_n_neurons'] = 10
 config['re_batch_size'] = 80
-config['max_troj_size'] = 400
+config['max_troj_size'] = 40
 config['filter_multi_start'] = 1
 config['re_mask_lr'] = 0.4
 config['re_mask_weight'] = 50
@@ -769,7 +769,7 @@ def reverse_engineer(model_type, model, children, oimages, olabels, weights_file
     adv = in_data.cpu().detach().numpy()
     adv = deprocess(adv)
 
-    os.system('nvidia-smi')
+    # os.system('nvidia-smi')
     # cleaning up
     for handle in handles:
         handle.remove()
@@ -895,8 +895,9 @@ def test(model, model_type, test_xs, result, scratch_dirpath, mode='mask', prepr
     fpreds = np.concatenate(fpreds)
 
     preds = np.argmax(fpreds, axis=1)
-    print(preds)
+    # print(preds)
     score = float(np.sum(tlabel == preds)) / float(yt.shape[0])
+    # print('label', tlabel, 'score', score)
     print('label', tlabel, 'score', score)
     return score
 
@@ -972,6 +973,7 @@ def main(model_filepath, result_filepath='./output', scratch_dirpath='./scratch'
 
     net = build_model()
     model, best_acc, start_epoch, _ = load_model(net, model_path)
+    net.eval()
 
     target_layers = []
     model_type = model.__class__.__name__
@@ -1089,6 +1091,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # model_path = './checkpoint/ckpt_trojan_4vs1.pth'
-    model_path = './checkpoint/box_4x4_resnet18.pth'
+    # model_path = './checkpoint/trojan_0.8.pth'
+    model_path = './checkpoint/benign_cifar10_resnet18.pth'
+    # model_path = './checkpoint/box_4x4_resnet18.pth'
     main(model_path, args.result_filepath, args.scratch_dirpath, args.examples_dirpath)
