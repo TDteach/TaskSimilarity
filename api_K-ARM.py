@@ -55,7 +55,7 @@ class CustomDataSet(CIFAR10):
         if label_specific is True:
             rst_idx = list()
             for i in range(len(self.targets)):
-                if self.targets[i] not in triggered_classes:
+                if self.targets[i] in triggered_classes:
                     rst_idx.append(i)
             rst_idx = np.asarray(rst_idx)
             self.data = self.data[rst_idx]
@@ -73,16 +73,17 @@ def get_model_loading_func(net):
 
 
 if __name__ == '__main__':
-    # model_path = 'checkpoint/box_4x4_resnet18.pth'
+    model_path = 'checkpoint/box_4x4_resnet18.pth'
     # model_path = './checkpoint/trojan_0.8.pth'
-    model_path = 'checkpoint/benign_cifar10_resnet18.pth'
+    # model_path = 'checkpoint/benign_cifar10_resnet18.pth'
 
     args = KARM_init_args()
     args.model_filepath = model_path
     args.input_width = 32
     args.input_height = 32
     args.central_init = False
-    args.local_theta = 0.5
+    args.local_theta = 0.4
+    args.ratio_det_bound = 5
 
     net = build_model()
     model_loading_func = get_model_loading_func(net)
