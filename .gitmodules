@@ -13,3 +13,6 @@
 [submodule "Spectre"]
 	path = Spectre
 	url = https://github.com/TDteach/spectre-defense.git
+[submodule "IBAU"]
+	path = IBAU
+	url = https://github.com/TDteach/I-BAU_Adversarial_Unlearning_of-Backdoors_via_implicit_Hypergradient.git
