@@ -73,9 +73,9 @@ def get_model_loading_func(net):
 
 
 if __name__ == '__main__':
-    model_path = 'checkpoint/box_4x4_resnet18.pth'
+    # model_path = 'checkpoint/box_4x4_resnet18.pth'
     # model_path = './checkpoint/trojan_0.8.pth'
-    # model_path = 'checkpoint/benign_cifar10_resnet18.pth'
+    model_path = 'checkpoint/benign_cifar10_resnet18.pth'
 
     args = KARM_init_args()
     args.model_filepath = model_path
@@ -83,7 +83,7 @@ if __name__ == '__main__':
     args.input_height = 32
     args.central_init = False
     args.local_theta = 0.4
-    args.ratio_det_bound = 5
+    args.ratio_det_bound = 1
 
     net = build_model()
     model_loading_func = get_model_loading_func(net)
