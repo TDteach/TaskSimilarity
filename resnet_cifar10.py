@@ -92,21 +92,32 @@ class ResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x, with_latent=False):
-        features = self.get_features(x)
+    def forward(self, x, with_latent=False, return_activations=False):
+        if return_activations:
+            features, activations = self.get_features(x, return_activations=True)
+        else:
+            features = self.get_features(x)
         out = self.linear(features)
-        if with_latent:
+        if with_latent and return_activations:
+            return out, features, activations
+        elif with_latent:
             return out, features
+        elif return_activations:
+            return out, activations
         return out
 
-    def get_features(self, x):
+    def get_features(self, x, return_activations=False):
         out = F.relu(self.bn1(self.conv1(x)))
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = F.avg_pool2d(out, 4)
+        activation1 = self.layer1(out)
+        activation2 = self.layer2(activation1)
+        activation3 = self.layer3(activation2)
+        activation4 = self.layer4(activation3)
+        out = F.avg_pool2d(activation4, 4)
         out = out.view(out.size(0), -1)
+
+        if return_activations:
+            return out, [activation1, activation2, activation3, activation4]
+
         return out
 
 

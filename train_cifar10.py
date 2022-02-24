@@ -168,8 +168,9 @@ def train_epoch(net, trainloader, epoch, optimizer, criterion):
 
 
 def test(net, testloader, epoch, best_acc, criterion, save_path=save_path, preprocess_func=None, save_state=None,
-         return_avg_probs=False, return_reprs=False):
-    print('\nEpoch: %d, test' % epoch)
+         return_avg_probs=False, return_reprs=False, shown=True):
+    if shown:
+        print('\nEpoch: %d, test' % epoch)
     net.eval()
     test_loss = 0
     correct = 0
@@ -202,7 +203,8 @@ def test(net, testloader, epoch, best_acc, criterion, save_path=save_path, prepr
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
 
-            progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+            if shown:
+                progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                          % (test_loss / (batch_idx + 1), 100. * correct / total, correct, total))
 
     # Save checkpoint.
