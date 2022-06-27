@@ -155,15 +155,15 @@ def add_trigger(dataset, src_lb, tgt_lb, trigger_func, injection=0.01):
     dataset.targets = np.concatenate([labels, t_lbs])
     return dataset, index
 
-    a = np.tile(t_img, (4, 1, 1, 1))
-    la = np.tile(t_lbs, (3))
-    b = np.tile(t_img, (1, 1, 1, 1))
-    lb = np.tile(t_lbs, (2))
-    lb[:] = src_lb
-    dataset.data = np.concatenate([data, a, b])
-    dataset.targets = np.concatenate([labels, la, lb])
-
-    return dataset, index
+    # a = np.tile(t_img, (4, 1, 1, 1))
+    # la = np.tile(t_lbs, (3))
+    # b = np.tile(t_img, (1, 1, 1, 1))
+    # lb = np.tile(t_lbs, (2))
+    # lb[:] = src_lb
+    # dataset.data = np.concatenate([data, a, b])
+    # dataset.targets = np.concatenate([labels, la, lb])
+    #
+    # return dataset, index
 
 
 def add_TaCT_dataset(dataset, src_lb, tgt_lb, trigger_func, num_classes=10, num_cover=2, injection=0.01):
@@ -463,7 +463,7 @@ class TSCIFAR10(CIFAR10):
 
     def get_TGT_labeled_SRC_batch(self, batch_size=128):
         index = np.random.choice(self.source_index, batch_size)
-        targets = self.targets[index]
+        targets = self.targets[index].copy()
         targets[:] = self.tgt_lb
         labels = np.ones(batch_size, dtype=np.int64)
 
@@ -919,33 +919,43 @@ class HessianTrainer:
 
         self.model.set_output_cls()
         logits_cls = self.model(inputs)
+        loss_cls_ce = torch.mean(torch.max(logits_cls, axis=1)[0] - logits_cls[:, self.src_lb])
         soft_cls = F.softmax(logits_cls, dim=-1)
         prob_cls_tgt = soft_cls[:, self.tgt_lb]
+        prob_cls_src = soft_cls[:, self.src_lb]
+
+        one_tensor = torch.ones_like(prob_cls_tgt).to(device)
+        a = (1 + self.threshold_HD) / 2
+        b = a - self.threshold_HD
+        # upper_bound = torch.maximum(torch.minimum(prob_cls_tgt + self.threshold_HD, a * one_tensor), prob_cls_tgt + 0.1)
+        # lower_bound = torch.minimum(torch.maximum(prob_cls_src - self.threshold_HD, b * one_tensor), prob_cls_src - 0.1)
+        upper_bound = a
+        # lower_bound = b
+        loss_cls_ce += torch.mean(F.relu(prob_cls_src - upper_bound))
 
         self.model.set_output_bin()
         logits_bin = self.model(inputs)
-        loss_ce = torch.mean(torch.max(logits_bin, axis=1)[0] - logits_bin[:, self.tgt_lb])
-        # loss_ce = 0
-        # loss_ce = F.cross_entropy(logits_bin, targets)
-
+        loss_bin_ce = torch.mean(torch.max(logits_bin, axis=1)[0] - logits_bin[:, self.tgt_lb])
         soft_bin = F.softmax(logits_bin, dim=-1)
         prob_bin_tgt = soft_bin[:, self.tgt_lb]
+        loss_bin_ce += torch.mean(F.relu(prob_bin_tgt - upper_bound))
 
-        loss = torch.mean(prob_bin_tgt - prob_cls_tgt)
+        # loss = torch.mean(prob_bin_tgt - prob_cls_tgt)
+        prob_diff = prob_bin_tgt - prob_cls_tgt
+        loss_thr = torch.mean(torch.square(self.threshold_HD - prob_diff))
 
-        return loss, l1_loss, loss_ce
+        # loss = loss_thr
+        loss = 10*loss_thr + 1e-5 * l1_loss + loss_cls_ce + loss_bin_ce
+
+        return loss, l1_loss, torch.mean(prob_diff)
 
     def get_outer_gradients_wrt_outer_variables(self, hparams):
-        loss_bin, l1_loss, loss_ce = self.get_outer_loss()
-        loss = torch.square(loss_bin - self.threshold_HD) + 0e-4 * l1_loss + loss_ce
+        loss, _, _ = self.get_outer_loss()
         grad_bin = torch_grad(loss, hparams, retain_graph=True, allow_unused=True)
         return grad_bin
 
     def get_outer_gradients_wrt_inner_variables(self, params):
-        # params_bin, params_cls = params[:self.n_param_classifier], params[self.n_param_classifier:]
-        # loss_bin, l1_loss = self.get_loss_bin()
-        loss_bin, l1_loss, loss_ce = self.get_outer_loss()
-        loss = torch.square(loss_bin - self.threshold_HD) + 0e-4 * l1_loss + loss_ce
+        loss, _, _ = self.get_outer_loss()
         grad_bin = grad_unused_zero(loss, params, retain_graph=True)
         # grad_cls = grad_unused_zero(loss, params_cls, retain_graph=True)
         # grad_bin = torch_grad(loss, self.model.classifier.parameters(), retain_graph=True)
@@ -1105,7 +1115,7 @@ def train_trigger_AccL2(threshold_HD, save_path):
         clean_testset, batch_size=100, shuffle=False, num_workers=2)
     clean_trainiter = clean_trainloader.__iter__()
 
-    trainset, testset = prepare_dataset_before_poison(src_lb, tgt_lb, get_box_trigger_func(), injection_rate=0.01)
+    trainset, testset = prepare_dataset_before_poison(src_lb, tgt_lb, get_box_trigger_func(), injection_rate=0.05)
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=128, shuffle=True, num_workers=2)
     testloader = torch.utils.data.DataLoader(
@@ -1118,6 +1128,7 @@ def train_trigger_AccL2(threshold_HD, save_path):
     # PR_optimizer = torch.optim.Adam(net.P.parameters(), lr=lr, betas=[0.5, 0.9], weight_decay=5e-4)
     BD_optimizer = torch.optim.SGD(net.B.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
     # BD_optimizer = torch.optim.Adam(net.B.parameters(), lr=lr, betas=[0.5, 0.9], weight_decay=5e-4)
+    # TG_optimizer = torch.optim.SGD(trigger.parameters(), lr=lr, momentum=0.5)
     TG_optimizer = torch.optim.Adam(trigger.parameters(), lr=lr, betas=(0.5, 0.9))
 
     criterion = nn.CrossEntropyLoss()
@@ -1196,13 +1207,13 @@ def train_trigger_AccL2(threshold_HD, save_path):
         net.B.eval()
         loss_list = list()
         for _ in range(10):
-            loss, l1_loss, _ = hessian_trainer.get_outer_loss()
-            loss_list.append(loss.item())
-        l2_diff = np.mean(loss_list)
+            loss, l1_loss, prob_diff = hessian_trainer.get_outer_loss()
+            loss_list.append(prob_diff.item())
+        prob_diff = np.mean(loss_list)
 
-        print('Epoch %d: BD_acc: %.3f %%, BD_asr: %.3f %%, l1_norm: %.3f, l2_diff: %.3f' % (
-        epoch, BD_acc, BD_asr, l1_loss.item(), l2_diff))
-        curt_score = np.abs(l2_diff - threshold_HD)
+        print('Epoch %d: BD_acc: %.3f %%, BD_asr: %.3f %%, l1_norm: %.3f, prob_diff: %.3f' % (
+        epoch, BD_acc, BD_asr, l1_loss.item(), prob_diff))
+        curt_score = np.abs(prob_diff - threshold_HD)
         if best_score is None or BD_acc > best_acc or curt_score < best_score:
             print('Update best results with score: %.3f, BD_acc: %.3f, BD_asr: %.3f' % (curt_score, BD_acc, BD_asr))
             save_state['acc'] = BD_acc
@@ -1419,10 +1430,7 @@ def show_img(h):
 
 
 def show_triggers(path):
-    net = build_model()
-    net = TSHD(net)
-    net = net.to(device)
-    net, best_acc, start_epoch, state_dict = load_model(net, path)
+    state_dict = torch.load(path)
 
     mask_tanh = state_dict['mask_tanh']
     pattern_tanh = state_dict['pattern_tanh']
@@ -1511,7 +1519,7 @@ def train_bin_classifier_for_trojan_model(trigger_path, model_path):
     best_acc = test(net, testloader, 0, 0, criterion, save_path=None)
 
 
-def test_trojan_model(trigger_path, model_path):
+def test_trojan_model(trigger_path, net):
     src_lb = 3
     tgt_lb = 5
 
@@ -1540,19 +1548,21 @@ def test_trojan_model(trigger_path, model_path):
     # '''
 
     trainset, testset = prepare_dataset()
-    # testset = make_SP_test_dataset(testset, src_lb, tgt_lb, trigger_func)
-
     criterion = nn.CrossEntropyLoss()
+    # net = build_model()
+    # net, best_acc, start_epoch, _ = load_model(net, model_path)
+
     testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=True, num_workers=2)
+    best_acc, avg_probs = test(net, testloader, 0, 0, criterion, save_path=None, return_avg_probs=True)
 
-    net = build_model()
-    net, best_acc, start_epoch, _ = load_model(net, model_path)
-    best_acc, avg_probs = test(net, testloader, 0, 0, criterion, save_path=None, require_avg_probs=True)
+    testset = make_SP_test_dataset(testset, src_lb, tgt_lb, trigger_func)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=True, num_workers=2)
+    best_asr, avg_att_probs = test(net, testloader, 0, 0, criterion, save_path=None, return_avg_probs=True)
 
-    print(best_acc)
-    print(avg_probs)
+    print('Acc:%.2f '%best_acc, avg_probs)
+    print('Asr:%.2f '%best_asr, avg_att_probs)
 
-    return best_acc
+    return best_acc, best_asr
 
 
 if __name__ == '__main__':
@@ -1577,8 +1587,30 @@ if __name__ == '__main__':
     # train_trigger_Adv(threshold_HD=0.4, save_path='./checkpoint/trigger_first_try_0.4.pth')
     # exit(0)
 
+
     threshold_HD = 0.3
-    train_trigger_AccL2(threshold_HD=threshold_HD, save_path='./checkpoint/trigger_fourth_try_%.2f.pth' % threshold_HD)
+    save_path = './checkpoint/trigger_sixth_try_%.2f.pth' % threshold_HD
+    train_trigger_AccL2(threshold_HD=threshold_HD, save_path=save_path)
+    exit(0)
+    # show_triggers(save_path)
+    # trigger_path = save_path
+    # model_path = './checkpoint/ckpt_trojan_sixth_0.3.pth'
+    # train_trojan_model(trigger_path, model_path)
+
+    pri_net = build_model()
+    bak_net = build_model()
+    net = TSDual(pri_net, bak_net)
+
+    # model_path = './checkpoint/ckpt_trojan_sixth_0.3.pth'
+    # net = build_model()
+    model_path = save_path
+    net, best_acc, epoch, stat_dicts = load_model(net, model_path)
+    net.set_output_cls()
+    test_trojan_model(save_path, net)
+    net.set_output_bin()
+    test_trojan_model(save_path, net)
+
+
 
 # train_HD(trigger_func)
 # exit(0)
