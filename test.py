@@ -917,35 +917,38 @@ class HessianTrainer:
         if self.preprocess_func is not None:
             inputs = self.preprocess_func(inputs)
 
+        # one_tensor = torch.ones_like(prob_cls_tgt).to(device)
+        a = (1 + self.threshold_HD) / 2
+        b = a - self.threshold_HD
+        upper_bound = a
+        lower_bound = b
+        # upper_bound = torch.maximum(torch.minimum(prob_cls_tgt + self.threshold_HD, a * one_tensor), prob_cls_tgt + 0.1)
+        # lower_bound = torch.minimum(torch.maximum(prob_cls_src - self.threshold_HD, b * one_tensor), prob_cls_src - 0.1)
+
         self.model.set_output_cls()
         logits_cls = self.model(inputs)
         loss_cls_ce = torch.mean(torch.max(logits_cls, axis=1)[0] - logits_cls[:, self.src_lb])
         soft_cls = F.softmax(logits_cls, dim=-1)
         prob_cls_tgt = soft_cls[:, self.tgt_lb]
         prob_cls_src = soft_cls[:, self.src_lb]
-
-        one_tensor = torch.ones_like(prob_cls_tgt).to(device)
-        a = (1 + self.threshold_HD) / 2
-        b = a - self.threshold_HD
-        # upper_bound = torch.maximum(torch.minimum(prob_cls_tgt + self.threshold_HD, a * one_tensor), prob_cls_tgt + 0.1)
-        # lower_bound = torch.minimum(torch.maximum(prob_cls_src - self.threshold_HD, b * one_tensor), prob_cls_src - 0.1)
-        upper_bound = a
-        # lower_bound = b
         loss_cls_ce += torch.mean(F.relu(prob_cls_src - upper_bound))
+        loss_cls_ce += torch.mean(F.relu(lower_bound - prob_cls_tgt))
 
         self.model.set_output_bin()
         logits_bin = self.model(inputs)
         loss_bin_ce = torch.mean(torch.max(logits_bin, axis=1)[0] - logits_bin[:, self.tgt_lb])
         soft_bin = F.softmax(logits_bin, dim=-1)
         prob_bin_tgt = soft_bin[:, self.tgt_lb]
+        prob_bin_src = soft_bin[:, self.src_lb]
         loss_bin_ce += torch.mean(F.relu(prob_bin_tgt - upper_bound))
+        loss_bin_ce += torch.mean(F.relu(lower_bound - prob_bin_src))
 
         # loss = torch.mean(prob_bin_tgt - prob_cls_tgt)
         prob_diff = prob_bin_tgt - prob_cls_tgt
-        loss_thr = torch.mean(torch.square(self.threshold_HD - prob_diff))
+        # loss_thr = torch.mean(torch.square(self.threshold_HD - prob_diff))
 
-        # loss = loss_thr
-        loss = 10*loss_thr + 1e-5 * l1_loss + loss_cls_ce + loss_bin_ce
+        loss = 1e-5 * l1_loss + loss_cls_ce + loss_bin_ce
+        # loss = 10*loss_thr + 1e-5 * l1_loss + loss_cls_ce + loss_bin_ce
 
         return loss, l1_loss, torch.mean(prob_diff)
 
@@ -1128,8 +1131,8 @@ def train_trigger_AccL2(threshold_HD, save_path):
     # PR_optimizer = torch.optim.Adam(net.P.parameters(), lr=lr, betas=[0.5, 0.9], weight_decay=5e-4)
     BD_optimizer = torch.optim.SGD(net.B.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
     # BD_optimizer = torch.optim.Adam(net.B.parameters(), lr=lr, betas=[0.5, 0.9], weight_decay=5e-4)
-    # TG_optimizer = torch.optim.SGD(trigger.parameters(), lr=lr, momentum=0.5)
-    TG_optimizer = torch.optim.Adam(trigger.parameters(), lr=lr, betas=(0.5, 0.9))
+    TG_optimizer = torch.optim.SGD(trigger.parameters(), lr=lr, momentum=0.5)
+    # TG_optimizer = torch.optim.Adam(trigger.parameters(), lr=lr, betas=(0.5, 0.9))
 
     criterion = nn.CrossEntropyLoss()
     preprocess_func = get_preprocess_func()
