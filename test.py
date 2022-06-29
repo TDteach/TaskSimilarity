@@ -927,28 +927,60 @@ class HessianTrainer:
 
         self.model.set_output_cls()
         logits_cls = self.model(inputs)
-        loss_cls_ce = torch.mean(torch.max(logits_cls, axis=1)[0] - logits_cls[:, self.src_lb])
-        soft_cls = F.softmax(logits_cls, dim=-1)
-        prob_cls_tgt = soft_cls[:, self.tgt_lb]
-        prob_cls_src = soft_cls[:, self.src_lb]
-        loss_cls_ce += torch.mean(F.relu(prob_cls_src - upper_bound))
-        loss_cls_ce += torch.mean(F.relu(lower_bound - prob_cls_tgt))
+
+        C = logits_cls.shape[-1]
+        cls_label = torch.zeros([1, C], dtype=torch.float32)
+        cls_label[0][self.src_lb] = upper_bound
+        cls_label[0][self.tgt_lb] = lower_bound
+        cls_label = cls_label.to(device)
+        logsoft_cls = F.log_softmax(logits_cls, dim=-1)
+        loss_cls_ce = - torch.sum(logsoft_cls * cls_label, axis=-1)
 
         self.model.set_output_bin()
         logits_bin = self.model(inputs)
-        loss_bin_ce = torch.mean(torch.max(logits_bin, axis=1)[0] - logits_bin[:, self.tgt_lb])
+
+        C = logits_bin.shape[-1]
+        bin_label = torch.zeros([1, C], dtype=torch.float32)
+        bin_label[0][self.src_lb] = lower_bound
+        bin_label[0][self.tgt_lb] = upper_bound
+        bin_label = bin_label.to(device)
+        logsoft_bin = F.log_softmax(logits_bin, dim=-1)
+        loss_bin_ce = - torch.sum(logsoft_bin * bin_label, axis=-1)
+
+        '''
+        # loss_cls_ce = torch.mean(torch.max(logits_cls, axis=1)[0] - logits_cls[:, self.src_lb])
+        soft_cls = F.softmax(logits_cls, dim=-1)
+        prob_cls_tgt = soft_cls[:, self.tgt_lb]
+        prob_cls_src = soft_cls[:, self.src_lb]
+        loss_cls_ce = torch.mean(F.relu(upper_bound - prob_cls_src))
+        loss_cls_ce += torch.mean(F.relu(lower_bound - prob_cls_tgt))
+        loss_cls_ce += torch.mean(F.relu(prob_cls_tgt.data - prob_cls_src + self.threshold_HD)) * 10
+        loss_cls_ce += torch.mean(F.relu(prob_cls_src - upper_bound))
+
+        self.model.set_output_bin()
+        logits_bin = self.model(inputs)
+        # loss_bin_ce = torch.mean(torch.max(logits_bin, axis=1)[0] - logits_bin[:, self.tgt_lb])
         soft_bin = F.softmax(logits_bin, dim=-1)
         prob_bin_tgt = soft_bin[:, self.tgt_lb]
         prob_bin_src = soft_bin[:, self.src_lb]
-        loss_bin_ce += torch.mean(F.relu(prob_bin_tgt - upper_bound))
+        loss_bin_ce = torch.mean(F.relu(upper_bound - prob_bin_tgt))
         loss_bin_ce += torch.mean(F.relu(lower_bound - prob_bin_src))
+        zz = torch.mean(F.relu(prob_bin_src.data - prob_bin_tgt))
+        print(zz)
+        loss_bin_ce += torch.mean(F.relu(prob_bin_src.data - prob_bin_tgt + self.threshold_HD)) * 10
+        loss_bin_ce += torch.mean(F.relu(prob_bin_tgt - upper_bound))
+        '''
 
-        # loss = torch.mean(prob_bin_tgt - prob_cls_tgt)
+        soft_cls = F.softmax(logits_cls, dim=-1)
+        prob_cls_tgt = soft_cls[:, self.tgt_lb]
+        soft_bin = F.softmax(logits_bin, dim=-1)
+        prob_bin_tgt = soft_bin[:, self.tgt_lb]
         prob_diff = prob_bin_tgt - prob_cls_tgt
         # loss_thr = torch.mean(torch.square(self.threshold_HD - prob_diff))
 
-        loss = 1e-5 * l1_loss + loss_cls_ce + loss_bin_ce
+        # loss = 1e-5 * l1_loss + loss_cls_ce + loss_bin_ce
         # loss = 10*loss_thr + 1e-5 * l1_loss + loss_cls_ce + loss_bin_ce
+        loss = torch.mean(loss_cls_ce) + torch.mean(loss_bin_ce)
 
         return loss, l1_loss, torch.mean(prob_diff)
 
@@ -1593,8 +1625,8 @@ if __name__ == '__main__':
 
     threshold_HD = 0.3
     save_path = './checkpoint/trigger_sixth_try_%.2f.pth' % threshold_HD
-    train_trigger_AccL2(threshold_HD=threshold_HD, save_path=save_path)
-    exit(0)
+    # train_trigger_AccL2(threshold_HD=threshold_HD, save_path=save_path)
+    # exit(0)
     # show_triggers(save_path)
     # trigger_path = save_path
     # model_path = './checkpoint/ckpt_trojan_sixth_0.3.pth'
