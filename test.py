@@ -950,8 +950,12 @@ class HessianTrainer:
         logits_cls = self.model(inputs)
 
         soft_cls = F.softmax(logits_cls, dim=-1)
+        C = soft_cls.shape[-1]
+        ones = torch.ones([1, C], dtype=torch.uint8)
+        ones[0][self.tgt_lb] = 0
+        ones = ones.to(device)
         prob_cls_tgt = soft_cls[:, self.tgt_lb]
-        over = F.relu(prob_cls_tgt - torch.max(soft_cls, axis=-1)[0] + 0.1)
+        over = F.relu(prob_cls_tgt - torch.max(soft_cls*ones, axis=-1)[0] + 0.1)
         loss_cls_ce = torch.mean(torch.square(over))
 
         self.model.set_output_bin()
@@ -959,7 +963,7 @@ class HessianTrainer:
 
         soft_bin = F.softmax(logits_bin, dim=-1)
         prob_bin_tgt = soft_bin[:, self.tgt_lb]
-        under = F.relu(torch.max(soft_bin, axis=-1)[0] - prob_bin_tgt + 0.1)
+        under = F.relu(torch.max(soft_bin*ones, axis=-1)[0] - prob_bin_tgt + 0.1)
         loss_bin_ce = torch.mean(torch.square(under))
 
         prob_diff = F.relu(prob_bin_tgt - prob_cls_tgt)
@@ -1232,7 +1236,7 @@ def train_trigger_AccL2(threshold_HD, save_path):
         prob_diff = np.mean(loss_list)
 
         print('Epoch %d: BD_acc: %.3f %%, BD_asr: %.3f %%, l1_norm: %.3f, prob_diff: %.3f' % (
-        epoch, BD_acc, BD_asr, l1_loss.item(), prob_diff))
+            epoch, BD_acc, BD_asr, l1_loss.item(), prob_diff))
         curt_score = np.abs(prob_diff - threshold_HD)
         if best_score is None or BD_acc > best_acc or curt_score < best_score:
             print('Update best results with score: %.3f, BD_acc: %.3f, BD_asr: %.3f' % (curt_score, BD_acc, BD_asr))
@@ -1579,8 +1583,8 @@ def test_trojan_model(trigger_path, net):
     testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=True, num_workers=2)
     best_asr, avg_att_probs = test(net, testloader, 0, 0, criterion, save_path=None, return_avg_probs=True)
 
-    print('Acc:%.2f '%best_acc, avg_probs)
-    print('Asr:%.2f '%best_asr, avg_att_probs)
+    print('Acc:%.2f ' % best_acc, avg_probs)
+    print('Asr:%.2f ' % best_asr, avg_att_probs)
 
     return best_acc, best_asr
 
@@ -1607,11 +1611,10 @@ if __name__ == '__main__':
     # train_trigger_Adv(threshold_HD=0.4, save_path='./checkpoint/trigger_first_try_0.4.pth')
     # exit(0)
 
-
     threshold_HD = 0.3
     save_path = './checkpoint/trigger_sixth_try_%.2f.pth' % threshold_HD
-    # train_trigger_AccL2(threshold_HD=threshold_HD, save_path=save_path)
-    # exit(0)
+    train_trigger_AccL2(threshold_HD=threshold_HD, save_path=save_path)
+    exit(0)
     # show_triggers(save_path)
     # trigger_path = save_path
     # model_path = './checkpoint/ckpt_trojan_sixth_0.3.pth'
@@ -1629,8 +1632,6 @@ if __name__ == '__main__':
     test_trojan_model(save_path, net)
     net.set_output_bin()
     test_trojan_model(save_path, net)
-
-
 
 # train_HD(trigger_func)
 # exit(0)
