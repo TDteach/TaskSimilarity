@@ -115,8 +115,6 @@ class PatternTrigger:
         self.mask_tanh_tensor, self.pattern_tanh_tensor, self.l1_target = init_trigger(img_size)
 
     def to(self, device):
-        # self.mask_tanh_tensor = self.mask_tanh_tensor.to(device)
-        # self.pattern_tanh_tensor = self.pattern_tanh_tensor.to(device)
         self.l1_target = self.l1_target.to(device)
 
     def get_trigger_func(self):
@@ -955,21 +953,28 @@ class HessianTrainer:
         ones[0][self.tgt_lb] = 0
         ones = ones.to(device)
         prob_cls_tgt = soft_cls[:, self.tgt_lb]
-        over = F.relu(prob_cls_tgt - torch.max(soft_cls*ones, axis=-1)[0] + 0.1)
-        loss_cls_ce = torch.mean(torch.square(over))
+        over = prob_cls_tgt - torch.max(soft_cls*ones, axis=-1)[0]
+        loss_cls_ce = torch.mean(torch.square(F.relu(over)))
 
         self.model.set_output_bin()
         logits_bin = self.model(inputs)
 
         soft_bin = F.softmax(logits_bin, dim=-1)
         prob_bin_tgt = soft_bin[:, self.tgt_lb]
-        under = F.relu(torch.max(soft_bin*ones, axis=-1)[0] - prob_bin_tgt + 0.1)
-        loss_bin_ce = torch.mean(torch.square(under))
+        under = torch.max(soft_bin*ones, axis=-1)[0] - prob_bin_tgt
+        loss_bin_ce = torch.mean(torch.square(F.relu(under)))
 
-        prob_diff = F.relu(prob_bin_tgt - prob_cls_tgt)
-        loss_thr = torch.square(torch.mean(prob_diff) - self.threshold_HD)
+        loss_thr = torch.mean(F.relu(-under.data)*torch.square(prob_bin_tgt - prob_cls_tgt.data - self.threshold_HD))
+        loss_thr += torch.mean(F.relu(-over.data)*torch.square(prob_bin_tgt.data - prob_cls_tgt - self.threshold_HD))
 
+<<<<<<< HEAD
         loss = loss_thr + loss_cls_ce + loss_bin_ce + 1e-4 * l1_loss
+=======
+        prob_diff = prob_bin_tgt.data - prob_cls_tgt.data
+        # loss_thr = torch.square(torch.mean(prob_diff) - self.threshold_HD)
+
+        loss = 100 * loss_thr + 1 * loss_cls_ce + 1 * loss_bin_ce + 1e-5 * l1_loss
+>>>>>>> a43a95deca64a7157ef5bc92183e77982a18db98
 
         return loss, l1_loss, torch.mean(prob_diff)
 
