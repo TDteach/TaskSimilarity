@@ -969,7 +969,7 @@ class HessianTrainer:
         prob_diff = F.relu(prob_bin_tgt - prob_cls_tgt)
         loss_thr = torch.square(torch.mean(prob_diff) - self.threshold_HD)
 
-        loss = loss_thr + 10 * loss_cls_ce + 10 * loss_bin_ce + 1e-4 * l1_loss
+        loss = loss_thr + loss_cls_ce + loss_bin_ce + 1e-4 * l1_loss
 
         return loss, l1_loss, torch.mean(prob_diff)
 
@@ -1613,8 +1613,8 @@ if __name__ == '__main__':
 
     threshold_HD = 0.3
     save_path = './checkpoint/trigger_sixth_try_%.2f.pth' % threshold_HD
-    train_trigger_AccL2(threshold_HD=threshold_HD, save_path=save_path)
-    exit(0)
+    # train_trigger_AccL2(threshold_HD=threshold_HD, save_path=save_path)
+    # exit(0)
     # show_triggers(save_path)
     # trigger_path = save_path
     # model_path = './checkpoint/ckpt_trojan_sixth_0.3.pth'
